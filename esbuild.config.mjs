@@ -1,6 +1,28 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from 'node:module';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
+const wasmPlugin = {
+	name: 'wasm',
+	setup(build) {
+		build.onResolve({ filter: /\.wasm$/ }, args => {
+			if (args.resolveDir === '') return;
+			// Use require.resolve for proper node_modules resolution.
+			const resolved = require.resolve(args.path, { paths: [args.resolveDir] });
+			return {
+				path: resolved,
+				namespace: 'wasm-binary',
+			};
+		});
+		build.onLoad({ filter: /.*/, namespace: 'wasm-binary' }, async (args) => ({
+			contents: await fs.promises.readFile(args.path),
+			loader: 'binary',
+		}));
+	},
+};
 
 const banner =
 `/*
@@ -32,6 +54,7 @@ const context = await esbuild.context({
 		"@lezer/highlight",
 		"@lezer/lr",
 		...builtinModules],
+	plugins: [wasmPlugin],
 	format: "cjs",
 	target: "es2018",
 	logLevel: "info",
